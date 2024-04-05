@@ -17,6 +17,8 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <chrono>
+#include <thread>
 using namespace std;
 
 class Process {
@@ -36,7 +38,7 @@ public:
     }
 
 
-    string executeAction(string& inputAction, sem_t *sem){
+    string executeAction(string& inputAction){
         string doneString = "done";
             // int val;
             // sem_getvalue(sem, &val);
@@ -52,16 +54,30 @@ public:
             //request action (requires a semaphore and pipe communication)
             //when request is sent, process is held up with a semaphore and does not proceed until semaphore is released by parent
             masterString += "requestResources Action\n";
-            updateRequest(inputAction.substr(7));
+            string updateStr = inputAction.substr(7) + "-" + to_string(deadline);
+            updateRequest(updateStr);
             deadline -= 1;
             cout << "p" << id << " should stop here forever" << endl;
             int val;
-            sem_getvalue(sem, &val);
+            sem_getvalue(semaphore, &val);
             cout << "Semaphore value: " << val << endl;
-            sem_wait(sem);
+            sem_wait(semaphore);
             cout << "p" << id << " kept going" << endl;
             masterString += "requestResources Action Released";
             printf("request sema in p%d released\n", id);
+            char buffer[1024];
+            string rssInputFromParent;
+            ssize_t bytesRead = read(*pipeFd_read, buffer, sizeof(buffer));
+            cout << id << " buffer: " << buffer << endl;
+            // close(fd[i][0]);
+            if (bytesRead > 0) {
+                string data(buffer, bytesRead); // Convert char buffer to string
+                rssInputFromParent = data;
+            } 
+            cout << "sendBackString: " + rssInputFromParent << endl;
+
+
+            
 
         }
         else if(inputAction.substr(0,13) == "use_resources"){
@@ -79,9 +95,6 @@ public:
                 }
             }
             masterString += "\n";
-
-
-
         }
         else if(inputAction.substr(0,5)=="print"){
             //print resources used action
@@ -126,9 +139,14 @@ public:
     void setSem(sem_t *theSem){
         semaphore = theSem;
     }
+    void setPipe(int *fd1, int *fd2){
+        pipeFd_write = fd1;
+        pipeFd_read = fd2;
+    }
 
     void updateRequest(string updateStr){
         currentRequest = updateStr;
+        write(*pipeFd_write, updateStr.c_str(), updateStr.size());
     }
     string getCurrentRequest(){
         return currentRequest;
@@ -138,27 +156,34 @@ private:
     int deadline;
     int computationTime;
     int numResources;
+    int* pipeFd_write;
+    int* pipeFd_read;
     string currentRequest;
     sem_t *semaphore;
     int id;
     // vector<string> myActions;
     string masterString;
     vector<map<string, bool> > resourceDict;
-};
+
+};//END OF PROCESS CLASS
 
 
 
 namespace opMode{
-    
-    void executeActions(vector<Process> &processes, vector<map<string, bool> >& resourceDict){
+    pair<string, int> EDFhandler(vector<int> deadlines, vector<vector<int> > processRequests, int numResources, int numProcesses, vector<map<string, bool> >& resourceDict, vector<int>& availRss);
+    pair<string, int> LLFhandler(vector<int> deadlines, vector<vector<int> > processRequests, int numResources, int numProcesses, vector<map<string, bool> >& resourceDict, vector<int>& availRss);
+
+    void executeActions(vector<Process> &processes, vector<map<string, bool> >& resourceDict, vector<int>& avilableRss, bool useEDF){
         int numProcesses = processes.size();
         printf("\nwe hecking made it!\n\n");
 
         int fd[numProcesses][2];
         int pid[numProcesses];
         string masterString = "";
-        sem_t semaphores[numProcesses];
-        const char *semaphore_name = "/my_semaphore";
+        string temp;
+        sem_t *semaphores[numProcesses];
+        sem_t *eachSema;
+        // char *semaphore_name = "/my_semaphore";
 
 
         // Create the pipes
@@ -170,20 +195,17 @@ namespace opMode{
             cout << "Sempahore values in executeActions:  " << processes.at(i).getSemValue() << endl;
         }
 
-        sem_t *sem = sem_open(semaphore_name, O_CREAT , 0666, 1);
-        if (sem == SEM_FAILED) {
-            perror("Semaphore creation failed.");
-            exit(1);
-        }
-
-        int value;
-        sem_getvalue(sem, &value);
-        cout << "Semaphore value: " << value << endl;
-        //semaphore creation
         for (int i = 0; i < numProcesses; i++) {
-            // sem_init(&semaphores[i], 0, 0); // Initialize semaphore for each child
+            temp = "sema" + to_string(i);
+            eachSema = sem_open(temp.c_str(), O_CREAT , 0666, 1);
+            if (eachSema == SEM_FAILED) {
+                perror("Semaphore creation failed....TERMINATING");
+                exit(1);
+            }
+            semaphores[i] = eachSema;   
 
-            processes.at(i).setSem( sem );
+            processes.at(i).setSem( semaphores[i] );
+            processes.at(i).setPipe(&fd[i][1], &fd[i][0]);
         }
         
 
@@ -201,16 +223,15 @@ namespace opMode{
                 string currentRequest;
                 printf("child %d entered\n", i+1);
                 int value;
-                sem_getvalue(sem, &value);
+                sem_getvalue(semaphores[i], &value);
                 cout << "Sempahore value in child after fork(): " << value << endl;
-                // sem_wait(sem);
                 string actionOut;
                 for(int j = 0; j < numActions; j++){
                     //calls every action in the queue for process i 
-                    actionOut = processes.at(i).executeAction(processes.at(i).myActions.at(j), sem);
+                    actionOut = processes.at(i).executeAction(processes.at(i).myActions.at(j));
 
-                    //this is wrong but I dont know where to put it: (pretty sure this needs to go to a pipe to get sent to the parent)
-                    currentRequest = processes.at(i).getCurrentRequest();
+                    // //this is wrong but I dont know where to put it: (pretty sure this needs to go to a pipe to get sent to the parent)
+                    // currentRequest = processes.at(i).getCurrentRequest();
 
                     cout << "SEmpahore value in child after fork() and inside for loop: " << processes.at(i).getSemValue() << endl;
                     if(actionOut == "done"){
@@ -229,85 +250,101 @@ namespace opMode{
                 }
                 bigString = processes.at(i).printMasterString();
                 printf("child %d exited\n", i+1);
-                close(fd[i][0]);
+                // close(fd[i][0]);
                 write(fd[i][1], bigString.c_str(), bigString.size());
-                close(fd[i][1]);
+                // close(fd[i][1]);
                 _exit(0);
-                // switch(i){
-                //     case 0: //p1
-                //         printf("running p1\n");
-                //         for(int j = 0; j < numActions; j++){
-                //             currentP.executeAction(currentP.myActions.at(j));
-                //         }
-                //         bigString = currentP.printMasterString();
-                //         close(fd[i][0]);
-                //         write(fd[i][1], bigString.c_str(), bigString.size());
-                //         close(fd[i][1]);
-                //         _exit(0);
-                //     case 1: //p2
-                //         printf("running p2\n");
-                //         for(int j = 0; j < numActions; j++){
-                //             currentP.executeAction(currentP.myActions.at(j));
-                //         }
-                //         bigString = currentP.printMasterString();
-                //         close(fd[i][0]);
-                //         write(fd[i][1], bigString.c_str(), bigString.size());
-                //         close(fd[i][1]);
-                //         _exit(0);
-                //     case 2: //p3
-                //         printf("running p3\n");
-                //         for(int j = 0; j < numActions; j++){
-                //             currentP.executeAction(currentP.myActions.at(j));
-                //         }
-                //         bigString = currentP.printMasterString();
-                //         close(fd[i][0]);
-                //         write(fd[i][1], bigString.c_str(), bigString.size());
-                //         close(fd[i][1]);
-                //         _exit(0);
-                //     case 3: //p4
-                //     case 4: //p5
-                //     case 5: //p6
-                //     case 6: //p7
-                //     case 7: //p8
-                //     case 8: //p9
-                //     case 9: //p10
-                //     default:
-                //         break;
-                // }
+
             }
 
 
         }
         //PARENT process
         printf("parent reached \n");
+        string pipeReads[numProcesses];
 
-        // while(true){
-        //     int choice;
-        //     int status;
-        //     pid_t result = waitpid(pid[choice], &status, WNOHANG);
-        //     cout << "Enter 1, 2, or 3 to signal a child process: ";
-        //     cin >> choice;
+        int ticker = 0;
+        while(ticker < 5){
+            //go through each pipe and if it has stuff in it, grab it
+            for(int i = 0; i < numProcesses; i++){
+                if(pipeReads[i].empty()){
+                    fd_set readSet;
+                    FD_ZERO(&readSet);
+                    FD_SET(fd[i][0], &readSet);
 
-        //     cout << result << endl;
+                    struct timeval timeout;
+                    timeout.tv_sec = 0;
+                    timeout.tv_usec = 0;
+                    int ready = select(fd[i][0] + 1, &readSet, nullptr, nullptr, &timeout);
+                    if (ready > 0) {
+                        // Data is available in the pipe, read it into a string
+                        char buffer[1024]; // Buffer to read into
+                        // close(fd[i][1]);
+                        ssize_t bytesRead = read(fd[i][0], buffer, sizeof(buffer));
+                        // close(fd[i][0]);
+                        if (bytesRead > 0) {
+                            string data(buffer, bytesRead); // Convert char buffer to string
+                            cout << "Data read from pipe " << i << ": " << data << endl;
 
-        //     if(choice < numProcesses && result > 0){
-        //         processes.at(choice).signal();
-        //     }
-        //     else if( choice < -1000){
-        //         break;
-        //     }
-        //     else{
-        //         cout << "Invalid choice. Try again." << endl;
-        //         continue;
-        //     }
+                            pipeReads[i] = data;
+                        } else {
+                            cout << "Error reading from pipe "<< i << endl;
+                        }
+                    } else if (ready == 0) {
+                        cout << "No data available in pipe "<< i << endl;
+                    } else {
+                        cout << "Error checking pipe for data." << endl;
+                        
+                    }
+                }
 
+            }
 
-        // }
+            // need to take inputs I have...determine if theyre release or request
+            // do request first
+            // break into () and deadline
+            vector<int> processDeadlines(numProcesses);
+            vector<vector<int> > processRequests(numProcesses, vector<int>(resourceDict.size()));
+            
+            for(int i = 0; i<numProcesses;i++){
+                if(!pipeReads[i].empty()){
+                    // grab deadline
+                    int deadlinePos = pipeReads[i].find('-') + 1;
+                    cout << "child " << i << " STOI_1: " << pipeReads[i].find('-') + 1 << endl;
+                    int theDeadline = stoi(pipeReads[i].substr(deadlinePos));
+                    cout << "child " << i << " STOI_2: " << pipeReads[i].substr(deadlinePos) << endl;
+                    processDeadlines.at(i) = theDeadline;
+                    //grab resource requests
+                    string justRss = pipeReads[i].substr(1,deadlinePos-3);
+                    //should be just the numbers and commas (no closing or opening parenthises)
+                    int numRss = resourceDict.size();
+                    int currentPos = 0;
+                    for(int j = 0; j<numRss;j++){
+                        processRequests.at(i).at(j) = justRss[currentPos]-'0';
+                        currentPos += 2;
+                    }
+                    pipeReads[i].clear();
+                }
+                else{
+                    for(int j=0; j<resourceDict.size();j++){
+                        processRequests.at(i).at(j) = -1; //no resource request from this pipe (either its done or doing something else atm)
+                    }
+                }
+            }
+            
+            pair<string, int> sendBackResult;
+            if(useEDF){ sendBackResult = EDFhandler(processDeadlines, processRequests, resourceDict.size(), numProcesses, resourceDict, avilableRss); }
+            else{ sendBackResult = LLFhandler(processDeadlines, processRequests, resourceDict.size(), numProcesses, resourceDict, avilableRss); }
+            
+            // close(fd[sendBackResult.second][0]);
+            write(fd[sendBackResult.second][1], sendBackResult.first.c_str(), sendBackResult.first.size());
+            sem_post(semaphores[sendBackResult.second]);
+            // close(fd[sendBackResult.second][1]);
 
-        // // wait for each child to complete
-        // for(int i = 0; i<numProcesses; i++){
-        //     waitpid(pid[i], nullptr, 0);
-        // }
+            ticker ++;
+            this_thread::sleep_for(chrono::milliseconds(2000)); // wait between pipe checks
+
+        }
         
 
         // reading final output from each child (last thing parent needs to do)
@@ -337,7 +374,66 @@ namespace opMode{
 
 
     }
-}
+
+    pair<string, int> EDFhandler(vector<int> deadlines, vector<vector<int> > processRequests, int numResources, int numProcesses, vector<map<string, bool> >& resourceDict, vector<int>& availRss){
+        cout << "incide EDF method"<< endl;
+        int smallestDeadline;
+        int indexOfSmallestProcess;
+        vector<int> processIndGoodToService;
+        string sendBackString = "";
+        bool foundRequestToService = false;
+        bool rssFlag = true;
+
+        //need to check which requests can be serviced at all rn
+        for(int i = 0; i < numProcesses; i++){
+            bool goodRequest = true;
+            for(int j = 0; j < numResources; j++){
+                if(processRequests.at(i).at(j) <= availRss.at(j)){
+                    //we have enough of this particular rss
+                }else{
+                    goodRequest = false;
+                    // not enough, cannot service this request rn
+                }
+            }
+            if(goodRequest){ processIndGoodToService.push_back(i); }
+            // cout << "finished first EDF step" << endl;
+        }
+        //find process with smallest deadline out of the processes we can service (uses index)
+        indexOfSmallestProcess = 0;
+        for(int i = 0; i < processIndGoodToService.size(); i++){
+            if(deadlines.at(processIndGoodToService.at(i)) < smallestDeadline){
+                smallestDeadline = deadlines.at(processIndGoodToService.at(i));
+                indexOfSmallestProcess = processIndGoodToService.at(i);
+            }
+        }
+        // cout << "finished second EDF step" << endl;
+        //assign specific instances of each resource for this process
+        vector<int> processToService = processRequests.at(indexOfSmallestProcess);
+       
+        for(int i = 0; i < numResources; i++){
+            if(processToService.at(i) > 0){
+                availRss.at(i) = availRss.at(i) - processToService.at(i);//update avail resources based on whats being allocated
+                int ticker = 0;
+                for (const auto& pair : resourceDict.at(i)) {
+                    if(pair.second && ticker < processToService.at(i)){ //true means available false means taken
+                        sendBackString += pair.first + ",";
+                        resourceDict.at(i)[pair.first] = false;
+                        ticker++;
+
+                    }
+                }
+            }
+        }
+        cout << "finished third EDF step" << endl;
+        cout << "output sending back to parent is: " << sendBackString << "== " << indexOfSmallestProcess << endl;
+        return make_pair(sendBackString, indexOfSmallestProcess);
+    }
+
+    pair<string, int> LLFhandler(vector<int> deadlines, vector<vector<int> > processRequests, int numResources, int numProcesses, vector<map<string, bool> >& resourceDict, vector<int>& availRss){
+
+    }
+
+}//END OF NAMESPACE
 
 
 
@@ -347,7 +443,11 @@ int main(){
     int numProcesses = 3;
     int numResources = 3;
     int currentProcess = 1;
-    int availRss[3] = {3, 3, 3}; // Available instances per resource type (3 resources each with 3 instances available)
+    // int availRss[3] = {3, 3, 3}; // Available instances per resource type (3 resources each with 3 instances available)
+    vector<int>availRss(3);
+    availRss.at(0) = 3;
+    availRss.at(1) = 3;
+    availRss.at(2) = 3;
 
     //max resources of each type each process will use
                   // {R1,R2,R3}
@@ -360,15 +460,15 @@ int main(){
     R3: car: Ford, Mercedes, BMW
     */
    vector<map<string, bool> > resourceDict(numResources);
-   resourceDict.at(0)["hilton"] = false;
-   resourceDict.at(0)["marriott"] = false;
-   resourceDict.at(0)["omni"] = false;
-   resourceDict.at(1)["orange"] = false;
-   resourceDict.at(1)["mango"] = false;
-   resourceDict.at(1)["pear"] = false;
-   resourceDict.at(2)["ford"] = false;
-   resourceDict.at(2)["mercedes"] = false;
-   resourceDict.at(2)["bmw"] = false;
+   resourceDict.at(0)["hilton"] = true;
+   resourceDict.at(0)["marriott"] = true;
+   resourceDict.at(0)["omni"] = true;
+   resourceDict.at(1)["orange"] = true;
+   resourceDict.at(1)["mango"] = true;
+   resourceDict.at(1)["pear"] = true;
+   resourceDict.at(2)["ford"] = true;
+   resourceDict.at(2)["mercedes"] = true;
+   resourceDict.at(2)["bmw"] = true;
 
 
     // I want to build each processs first from the txt file
@@ -446,7 +546,7 @@ int main(){
         }
     }
 
-    opMode::executeActions(processes, resourceDict);
+    opMode::executeActions(processes, resourceDict, availRss, true);
 
     return 0;
 }
@@ -500,7 +600,7 @@ int main(int argc, char** argv){
                     if(!isprint(item.back())){
                         item = item.substr(0, item.size()-1);
                     }
-                    eachResource[item] = false;
+                    eachResource[item] = true;
                 }
             }
             resourceDict.push_back(eachResource);
