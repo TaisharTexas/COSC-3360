@@ -31,28 +31,27 @@ string Process::executeAction(string& inputAction){
             //when request is sent, process is held up with a semaphore and does not proceed until semaphore is released by parent
             masterString += "requestResources Action\n";
             string updateStr = inputAction.substr(7) + "-" + to_string(deadline);
+            cout << "Process.cpp #" << id << " - Sending " << updateStr.c_str() << " to Parent which is " << updateStr.size()+1 << " bytes of data to write." << endl;;
             updateRequest(updateStr);
             deadline -= 1;
-            cout << "Process.cpp - Process " << id << " should stop here forever <--------" << endl;
-            // int val;
-            // sem_getvalue(semaphore, &val);
-            // cout << "Semaphore value: " << val << endl;
+            cout << "Process.cpp #" << id << " - Process " << id << " should stop and wait for the Parent <--------" << endl;
             sem_wait(semaphore);
-            cout << endl << "Process.cpp ------- Process " << id << " kept going after a sem_wait returned." << endl;
+            // ----- WAITING --------
+
+            cout << endl << "Process.cpp #" << id << " ------- Process " << id << " kept going after a sem_wait returned." << endl;
             masterString += "requestResources Action Released";
-            cout << "Process.cpp - Semaphore in Process " << id << " released" << endl;
+            cout << "Process.cpp #" << id << " - Semaphore in Process " << id << " released" << endl;
             char buffer[1024];
             string rssInputFromParent;
-            ssize_t bytesRead = read(pipeFd_read, buffer, sizeof(buffer));
-            cout << "Process.cpp - Process " << id << " read buffer from pipe: " << buffer << endl;
-            // POST PARENT SEMAPHORE (I)
-            cout << "Process.cpp - Releasing Parent to continue cycling" << endl;
+            ssize_t bytesRead = read(pipeRead_fd, buffer, sizeof(buffer));
+            cout << "Process.cpp #" << id << " - Process " << id << " read " << bytesRead << " bytes of data from pipe: " << buffer << endl;
+            cout << "Process.cpp #" << id << " - Releasing Parent to continue cycling" << endl;
             sem_post(parentSem);
             if (bytesRead > 0) {
                 string data(buffer, bytesRead); // Convert char buffer to string
                 rssInputFromParent = data;
             } 
-            cout << "Process.cpp - Process " << id << " sendBackString: " + rssInputFromParent << endl;
+            cout << "Process.cpp #" << id << " - Process " << id << " sendBackString: " + rssInputFromParent << endl;
         }
         else if(inputAction.substr(0,13) == "use_resources")
         {
@@ -124,14 +123,15 @@ void Process::setSem(sem_t *theSem, sem_t *theSema){
     parentSem = theSema;
 }
 
-void Process::setPipe(int fd1, int fd2){
-    pipeFd_write = fd1;
-    pipeFd_read = fd2;
+void Process::setPipe(int fd0_read, int fd1_write)
+{
+    pipeWrite_fd = fd1_write;
+    pipeRead_fd = fd0_read;
 }
 
 void Process::updateRequest(string updateStr){
     currentRequest = updateStr;
-    write(pipeFd_write, updateStr.c_str(), updateStr.size());
+    write(pipeWrite_fd, updateStr.c_str(), updateStr.size()+1);
 }
 
 string Process::getCurrentRequest(){

@@ -1,10 +1,12 @@
 #include "Process.h"
 #include <vector>
 #include <iostream>
+
 #include <unistd.h> 
 #include <iostream>
 #include <thread>
 #include <fcntl.h>
+
 
 namespace opMode
 {
@@ -75,17 +77,23 @@ namespace opMode
 
     pair<string, int> LLFhandler(vector<int> deadlines, vector<vector<int> > processRequests, int numResources, int numProcesses, vector<map<string, bool> >& resourceDict, vector<int>& availRss)
     {
-
+        int indexOfSmallestProcess = 99;
+        string sendBackString = "Blah";
+        return make_pair(sendBackString, indexOfSmallestProcess);
     }
 
     void executeActions(vector<Process> &processes, vector<map<string, bool> >& resourceDict, vector<int>& avilableRss, bool useEDF)
     {
         int numProcesses = processes.size();
 
-        cout << endl << "main.cpp - Starting the executeActions method on the Processes that were just made.  We hecking made it!" << endl 
-                     << "--------------------------------------------------------------------------------------------------------" << endl << endl ;
+        cout << endl 
+             << "----------------------------------------------------------------------------------------------------------------" << endl 
+             << "main.cpp - Starting the opMode::executeActions method on the Processes that were just made.  We hecking made it!" << endl 
+             << "----------------------------------------------------------------------------------------------------------------" << endl 
+             << endl ;
 
-        int fd[numProcesses][2];
+        int fd_P2C[numProcesses][2];
+        int fd_C2P[numProcesses][2];
         int pid[numProcesses];
         string masterString = "";
         string temp;
@@ -97,12 +105,17 @@ namespace opMode
         ///////////////////////
         for (int i = 0; i < numProcesses; i++) 
         {
-            if (pipe(fd[i]) == -1) 
+            if (pipe(fd_P2C[i]) == -1) 
             { //pipe creation failed
                 perror("pipe");
                 exit(1);
             }
-            cout << "main.cpp - Sempahore values in executeActions:  " << processes.at(i).getSemValue() << endl;
+            if (pipe(fd_C2P[i]) == -1) 
+            { //pipe creation failed
+                perror("pipe");
+                exit(1);
+            }
+            // cout << "main.cpp - Sempahore values in executeActions:  " << processes.at(i).getSemValue() << endl;
         }
 
         ///////////////////////
@@ -111,7 +124,7 @@ namespace opMode
         sem_t* parentSema = sem_open("parentSem", O_CREAT, 0666, 1);
         for (int i = 0; i < numProcesses; i++) 
         {
-            temp = "sema" + to_string(i);
+            temp = "/sema_" + to_string(i);
             eachSema = sem_open(temp.c_str(), O_CREAT , 0666, 1);
             if (eachSema == SEM_FAILED) 
             {
@@ -122,12 +135,14 @@ namespace opMode
             {
                 // nothing
             }
-            cout << "main.cpp - trywait on semaphore just opened: " << sem_trywait( eachSema) << endl;
 
             semaphores[i] = eachSema;   
 
             processes.at(i).setSem( semaphores[i], parentSema);
-            processes.at(i).setPipe(fd[i][1], fd[i][0]);
+            processes.at(i).setPipe(fd_P2C[i][0], fd_C2P[i][1]);
+            cout << "main.cpp - Semaphore for Process " << i << " is opened, locked, and assigned to the Process." << endl;
+            cout << "main.cpp - Pipe for Process " << i << " is opened and read/write fds are assigned to the Process." << endl;
+
         }
         
         
@@ -149,8 +164,7 @@ namespace opMode
                 int numActions = processes.at(i).myActions.size();
                 string bigString;
                 string currentRequest;
-                cout << endl << "main.cpp - Child process " << i << " executing" << endl
-                     << "------------------------------------------" << endl;
+                cout << endl << "main.cpp ------------------------ Child process " << i << " executing ------------------------------------------" << endl;
                 int value;
                 sem_getvalue(semaphores[i], &value);
                 // cout << "main.cpp - Sempahore value in child after fork(): " << value << endl;
@@ -184,9 +198,9 @@ namespace opMode
 
                 }
                 bigString = processes.at(i).printMasterString();
-                cout << " main.cpp - child process " << i << "'s string is: " << bigString << endl;
-                printf("main.cpp - child %d exited\n", i);
-                write(fd[i][1], bigString.c_str(), bigString.size());
+                cout << "main.cpp - Child process " << i << "'s string is: " << bigString << endl;
+                write(fd_C2P[i][1], bigString.c_str(), bigString.size()+1);
+                cout << "main.cpp - Child process " << i << " exiting!!" << endl;
                 _exit(0);
             }
         }
@@ -195,12 +209,14 @@ namespace opMode
         //PARENT process
         ///////////////////////
 
-        cout << endl << endl << "main.cpp - Parent executing" << endl
-                     << "---------------------------" << endl;
+        cout << endl << endl << "main.cpp ---------------------- Parent executing ---------------------------------------------------" << endl;
         string pipeReads[numProcesses];
 
-        int ticker = 0;
-        while(ticker < 5){
+        int ticker = 0;           
+        int numPipesGotData = 0;
+
+        do {
+            numPipesGotData = 0;
             //go through each pipe and if it has stuff in it, grab it
             for(int i = 0; i < numProcesses; i++)
             {
@@ -208,7 +224,7 @@ namespace opMode
                 {
                     fd_set readSet;
                     FD_ZERO(&readSet);
-                    FD_SET(fd[i][0], &readSet);
+                    FD_SET(fd_C2P[i][0], &readSet);
 
                     struct timeval timeout;
                     timeout.tv_sec = 0;
@@ -216,19 +232,19 @@ namespace opMode
 
                     cout << "main.cpp - Parent checking pipes for data from child " << i << endl;
 
-                    int ready = select(fd[i][0] + 1, &readSet, nullptr, nullptr, &timeout);
+                    int ready = select(fd_C2P[i][0] + 1, &readSet, nullptr, nullptr, &timeout);
 
                     if (ready > 0) 
                     {
                         // Data is available in the pipe, read it into a string
                         char buffer[1024]; // Buffer to read into
-                        // close(fd[i][1]);
-                        ssize_t bytesRead = read(fd[i][0], buffer, sizeof(buffer));
-                        // close(fd[i][0]);
+                        // close(fd_P2C[i][1]);
+                        ssize_t bytesRead = read(fd_C2P[i][0], buffer, sizeof(buffer));
+                        // close(fd_P2C[i][0]);
                         if (bytesRead > 0) 
                         {
                             string data(buffer, bytesRead); // Convert char buffer to string
-                            cout << "main.cpp - Data read from pipe " << i << ": " << data << endl;
+                            cout << "main.cpp - Parent read " << bytesRead << " bytes of data from pipe " << i << ": " << data << endl;
 
                             pipeReads[i] = data;
                         } 
@@ -254,12 +270,12 @@ namespace opMode
             // break into () and deadline
             vector<int> processDeadlines(numProcesses);
             vector<vector<int> > processRequests(numProcesses, vector<int>(resourceDict.size()));
-            
+
             for(int i = 0; i<numProcesses;i++)
             {
                 if(!pipeReads[i].empty())
                 {
-                    cout << "main.cpp - Got data from child.  Will parse now." << endl;
+                    cout << "main.cpp - Parent got data from child " << i << ".  Will parse now." << endl;
                     // grab deadline
                     int deadlinePos = pipeReads[i].find('-') + 1;
                     if (deadlinePos > 0)
@@ -278,6 +294,7 @@ namespace opMode
                             processRequests.at(i).at(j) = justRss[currentPos]-'0';
                             currentPos += 2;
                         }
+                        numPipesGotData++;
                         // pipeReads[i].clear();
                     }
                     else
@@ -286,7 +303,7 @@ namespace opMode
                         {
                             processRequests.at(i).at(j) = -1; //no resource request from this pipe (either its done or doing something else atm)
                         }
-                        cout << "main.cpp - Did not get valid request data from child " << i << ". Must be doing something else." << endl;                    
+                        cout << "main.cpp - Parent did not get valid request data from child " << i << ". Must be doing something else, or it could be done!." << endl;                    
                     }
                 }
                 else
@@ -295,41 +312,56 @@ namespace opMode
                     {
                         processRequests.at(i).at(j) = -1; //no resource request from this pipe (either its done or doing something else atm)
                     }
-                    cout << "main.cpp - Did not get data from child " << i << ". Must be doing something else." << endl;
+                    cout << "main.cpp - Parent did not get data from child " << i << ". Must be doing something else.  Maybe the process done." << endl;
                 }
             }
             
-            cout << "main.cpp - Parent going to process Earliest Deadline First scheduler." << endl;
-            pair<string, int> sendBackResult;
-            if(useEDF){ sendBackResult = EDFhandler(processDeadlines, processRequests, resourceDict.size(), numProcesses, resourceDict, avilableRss); }
-            else{ sendBackResult = LLFhandler(processDeadlines, processRequests, resourceDict.size(), numProcesses, resourceDict, avilableRss); }
-            
-            pipeReads[sendBackResult.second].clear();
-            // close(fd[sendBackResult.second][0]);
+            if ( numPipesGotData > 0 )
+            {
+                cout << "main.cpp - Parent going to process Earliest Deadline First scheduler." << endl;
+                pair<string, int> sendBackResult;
+                if(useEDF){ sendBackResult = EDFhandler(processDeadlines, processRequests, resourceDict.size(), numProcesses, resourceDict, avilableRss); }
+                else{ sendBackResult = LLFhandler(processDeadlines, processRequests, resourceDict.size(), numProcesses, resourceDict, avilableRss); }
+                
+                pipeReads[sendBackResult.second].clear();
+                // close(fd_P2C[sendBackResult.second][0]);
 
-            cout << "main.cpp - Finished EDF.  Going to send back this: " << sendBackResult.first.c_str() << " to process num: " << sendBackResult.second << endl;
-            write(fd[sendBackResult.second][1], sendBackResult.first.c_str(), sendBackResult.first.size());
-            sem_post(semaphores[sendBackResult.second]);
-            cout << "Main.cpp - Locking parent to wait for child to read pipe" << endl;
-            sem_wait(parentSema);
-            cout << "main.cpp - Just wrote the EDF result to the appropriate child's pipe.  And posted its semaphore." << endl;
-            // close(fd[sendBackResult.second][1]);
+                cout << "main.cpp - Parent finished EDF.  Going to send back these resources: " << sendBackResult.first.c_str() << endl;
+                cout << "main.cpp - Parent sending back: " << sendBackResult.first.c_str() << " which is " << sendBackResult.first.size() + 1 << " bytes to child " << sendBackResult.second << endl;
+                write(fd_P2C[sendBackResult.second][1], sendBackResult.first.c_str(), sendBackResult.first.size()+1);
+                sem_post(semaphores[sendBackResult.second]);
+                cout << "main.cpp - Parent just wrote the EDF result to child " << sendBackResult.second << "'s pipe.  And posted its semaphore." << endl;
+                cout << "Main.cpp - Parent calling sem_wait(parentSema) to wait for child " << sendBackResult.second << " to read pipe and sem_post." << endl;
+                sem_wait(parentSema);
+                // close(fd_P2C[sendBackResult.second][1]);
+            }
+            else
+            {
+                cout << "main.cpp --------------- Parent did not get any data in pipes from children.  Must be all done.  STOPPING. --------------------" << endl;
+            }
 
             ticker ++;
-            this_thread::sleep_for(chrono::milliseconds(2000)); // wait between pipe checks
+            this_thread::sleep_for(chrono::milliseconds(100)); // wait between pipe checks
 
-        }
-        
+        } while( numPipesGotData > 0 && ticker < 100 );
+
         // reading final output from each child (last thing parent needs to do)
         string finalString;
         for (int i = 0; i < numProcesses; ++i) {
             int status;
             wait(&status); // Wait for child process to finish
+            cout << "main.cpp - Parent done waiting for child process " << i << ".  Time to grab its last string from the pipe." << endl;
+            cout << "main.cpp - Before reading from the pipe, let's look at pipereads[" << i << "]: " << pipeReads[i] << endl;
+            finalString += pipeReads[i];
             if (WIFEXITED(status)) {
                 char buffer[1024];
-                close(fd[i][1]); // Close write end of pipe
-                int bytes_read = read(fd[i][0], buffer, sizeof(buffer) - 1); // Read from pipe
-                close(fd[i][0]); // Close read end of pipe
+                close(fd_P2C[i][0]);
+                close(fd_P2C[i][1]);
+                close(fd_C2P[i][1]); // Close write end of pipe
+                cout << "main.cpp - Parent about to read from child " << i << "'s pipe." << endl;
+                int bytes_read = read(fd_C2P[i][0], buffer, sizeof(buffer)-1 ); // Read from pipe
+                cout << "main.cpp - Parent read " << bytes_read << " bytes from child " << i << "'s pipe." << endl;
+                close(fd_C2P[i][0]); // Close read end of pipe
                 if (bytes_read > 0) {
                     buffer[bytes_read] = '\0'; // Null terminate the char array
                     string message(buffer); // Convert char array to string
@@ -343,7 +375,7 @@ namespace opMode
             }
         }
 
-        cout << "\nFinal String: " << finalString << endl;
+        cout << "\nFinal String: " << finalString << endl << "note.... I used pipeReads to build this." << endl;
     }
 
 }//END OF NAMESPACE
@@ -427,7 +459,7 @@ int main()
     actionMap.clear();
     currentProcess += 1;
 
-    deadline = 40;
+    deadline = 20;
     compTime = 14;
     actionMap.push_back("request(1,0,0)");
     // actionMap.push_back("use_resources(1,1)");
@@ -449,8 +481,15 @@ int main()
     // processes.push_back(Process(deadline, compTime, numProcesses, actionMap, resourceDict, &semaphores[currentProcess], currentProcess));
     actionMap.clear();
 
-    cout << endl << "main.cpp - Setting up the Processes and loading in their actions." << endl 
-                 << "-----------------------------------------------------------------" << endl << endl ;
+    cout << endl
+         << "-----------------------------------------------------------------" << endl 
+         << "------------------- STARTING RUN --------------------------------" << endl 
+         << "-----------------------------------------------------------------" << endl 
+         << endl
+         << "-----------------------------------------------------------------" << endl 
+         << "main.cpp - Setting up the Processes and loading in their actions." << endl 
+         << "-----------------------------------------------------------------" << endl 
+         << endl ;
 
     for(int i = 0; i < 3; i++)
     {

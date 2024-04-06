@@ -24,7 +24,7 @@ public:
     
     void setSem(sem_t *theSem, sem_t *parentSema);
     
-    void setPipe(int fd1, int fd2);
+    void setPipe(int fd0_read, int fd1_write);
     
     void updateRequest(string updateStr);
     
@@ -34,8 +34,8 @@ private:
     int deadline;
     int computationTime;
     int numResources;
-    int pipeFd_write;
-    int pipeFd_read;
+    int pipeWrite_fd;
+    int pipeRead_fd;
     string currentRequest;
     sem_t *semaphore;
     sem_t *parentSem;
