@@ -20,7 +20,7 @@ public:
     vector<string> myActions;
 
     // Constructor with parameters
-    Process(int deadline, int computationTime, int numResources, vector<string>& myActions, vector<map<string, bool> > &resourceDict, sem_t *semaphore, int id) {
+    Process(int deadline, int computationTime, int numResources, vector<string>& myActions, vector<map<string, bool> > &resourceDict, int id) {
         this->deadline = deadline;
         this->computationTime = computationTime;
         this->numResources = numResources;
@@ -233,7 +233,8 @@ int main(int argc, char** argv){
                 else if(line.substr(0,4) == "end."){
                     cout << "end command: " << line << endl;
                     actionMap.push_back(line);
-                    processes.push_back(Process(deadline, compTime, numProcesses, actionMap, resourceDict, &semaphores[currentProcess], currentProcess));
+                    Process myProc2(deadline, compTime, numProcesses, actionMap, resourceDict, currentProcess );
+                    processes.push_back( myProc2);
                     actionMap.clear();
                 }
                 else{

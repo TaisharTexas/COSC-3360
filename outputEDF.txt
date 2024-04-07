@@ -1,0 +1,66 @@
+
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)
+requestResources Action
+requestResources Action Released
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)Marriott(x1)
+releaseResources Action
+end Action
+
+requestResources Action
+requestResources Action Released
+useResources Action:
+
+printResourcesUsed Action
+useResources Action:
+
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x2)Marriott(x2)
+releaseResources Action
+end Action
+
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)
+requestResources Action
+requestResources Action Released
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)
+requestResources Action
+requestResources Action Released
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)
+requestResources Action
+requestResources Action Released
+useResources Action:
+Hilton(x1)Marriott(x1)Omni(x1)
+releaseResources Action
+end Action

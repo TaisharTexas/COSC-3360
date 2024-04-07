@@ -27,6 +27,8 @@ public:
     void setPipe(int fd0_read, int fd1_write);
     
     void updateRequest(string updateStr);
+
+    void setUseDeadline(bool flag);
     
     string getCurrentRequest();
 
@@ -40,6 +42,7 @@ private:
     sem_t *semaphore;
     sem_t *parentSem;
     int id;
+    bool useDeadline;
     // vector<string> myActions;
     string masterString;
     vector<map<string, bool> > resourceDict;

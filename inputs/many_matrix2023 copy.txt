@@ -4,7 +4,7 @@
 2 3 3
 2 2 2
 3 3 3
-process_0:
+process_1:
 40
 15
 request(1,0,0);
@@ -22,7 +22,7 @@ request(1,0,0);
 use_resources(1,1);
 release(2,3,3);
 end.
-process_1:
+process_2:
 30
 11
 request(0,0,2);
@@ -33,7 +33,7 @@ request(2,2,0);
 use_resources(1,2);
 release(2,2,2);
 end.
-process_2:
+process_3:
 40
 14
 request(1,0,0);
