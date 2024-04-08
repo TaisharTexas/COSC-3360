@@ -17,6 +17,8 @@ class Child
     
     string executeAction(string& inputAction);
     
+    void run();
+
     string printMasterString();
     
     void signal();
