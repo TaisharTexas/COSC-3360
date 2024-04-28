@@ -1,0 +1,30 @@
+To design and implement a virtual memory manager with paging using the LIFO page replacement algorithm, you can follow these steps:
+	1	Page Table and Frames Table Structures:
+	•	Define a page table structure that contains entries for each page in the address space, including the page number, frame number (if present in memory), and any additional fields needed for bookkeeping.
+	•	Create a frames table to track which pages are currently in memory. Each entry should include the address space, page number, and links for managing the allocated and free lists.
+	2	Page Fault Handler Process:
+	•	Write a page fault handler process that is triggered by the interrupt dispatcher when a page fault occurs. This handler should receive the address space and page number of the missing page.
+	•	Request a page transfer by placing an entry in the disk driver work queue and signaling the associated semaphore.
+	3	Disk Driver Process:
+	•	Design a disk driver process responsible for scheduling all I/O operations to the paging disk.
+	•	Implement a disk command format like STARTDISK(read/write, memory_addr, disk_addr) to initiate I/O operations. Wire the paging disk to the semaphore of the disk driver process to signal when a command is complete.
+	•	Maintain a work queue in the disk driver process containing entries for I/O operations, including process ID, read/write operation, frame index, and disk address.
+	4	Page Replacement Algorithm:
+	•	Create a separate process for the page replacement algorithm, which is signaled each time a page frame is removed from the pool.
+	•	Implement the LIFO page replacement algorithm within this process. When a page needs to be replaced, deactivate one or more processes as needed to free up memory frames. Activate processes later to ensure the free pool size remains within the specified range (min to max frames).
+	5	Initialization:
+	•	Initialize semaphores with the correct initial counts to control synchronization between processes, such as the page fault handler, disk driver, and page replacement algorithm.
+
+
+    In this assignment, you will design and implement a virtual memory manager with paging. Use the LIFO page replacement algorithm.
+You may add additional fields to these data structures if needed in your design. There is one page table per address space (process), and one table entry per page. The address can thus be divided into 2 parts: page number and displacement (offset). A single frames table contains the address space and page number of the page currently occupying each page frame. The format of the entry for frame f is: 
+FRAMES[f]: a p forward_link backward_link
+Entries in the frames table are linked together in allocated and free lists. The disk page table entry, DPT[a,p], contains the address on the paging disk of page p of address space a.
+
+Write a page fault handler process that can be invoked by the interrupt dispatcher when a page fault occurs. The address space and page number of the missing page are made available to the fault handler by the addressing hardware. The fault handler requests a page transfer by placing an entry in the disk driver work queue and signaling the associated semaphore. 
+Design a disk driver process which schedules all I/O to the paging disk. disk command
+STARTDISK(read/write, memory_addr, disk_addr) 
+initiates an I/O operation. The paging disk is wired to the semaphore of the disk driver process, which it signals when a command is complete. The disk has a work queue containing entries of the form: (process_id, read/write, frame_index, disk_addr). 
+Assume that the page replacement algorithm runs as a separate process which is signaled each time a page frame is removed from the pool. the replacement process attempts to maintain a free pool size between min and max frames. To accomplish this, one or more processes may need to be ”deactivated” and ”activated” later.
+Note: In this assignment, you need not consider the actual creation and deletion of address spaces. Be sure to initialize the semaphores you use with correct initial counts.
+
