@@ -15,6 +15,147 @@ struct Action{
     int p;
 };
 
+void OPT(vector<int>ids, vector<string>addrs, int totalPageFrames, int framesPerProcess, int numProcesses, int lookahead){
+    vector<Action> processLog;
+    int numFaults = 0;
+    int numReplacements = 0;
+    
+    for(int i = 0; i < addrs.size(); i++){
+        
+        string key = addrs.at(i);   
+        int processToCheck = ids.at(i);
+        bool isAddrsLoaded = false;
+
+        if(key == "-1"){
+            printf("process %d is done\n============================\n", processToCheck);
+        }
+        else{
+
+            for (const auto& item : processLog) {
+                if(item.addr == key){
+                    isAddrsLoaded = true;
+                }
+            }
+            
+            if(!isAddrsLoaded){
+                printf("addr: %s for process %d not loaded - Page Fault\n", key.c_str(), processToCheck);
+                numFaults++;
+                //addrs not in log
+                //need to check if theres room to add it
+                bool isPFrameOk = false;
+                bool isMFrameOk = false;
+
+                
+                int ticker = 0;
+                for (const auto& pair : processLog) {
+                    // printf("pair.addr = %d ::: processToCheck = %d\n", pair.p, processToCheck);
+                    if (pair.p == processToCheck) {
+                        ticker++;
+                    }
+                }
+                // printf("ticker for %d = %d\n", processToCheck, ticker);
+
+                //check if there's room in the process's specific frame max
+                if(ticker < framesPerProcess){ isPFrameOk = true; }
+                //check if theres room at all for another page
+                if(processLog.size() < totalPageFrames){ isMFrameOk = true; }
+
+                // printf("isPFrameOk = %d ::: isMFrameOk = %d\n",  isPFrameOk ? 1:0, isMFrameOk ? 1:0);
+
+                if(isPFrameOk && isMFrameOk){
+                    // both have room
+                    struct Action A = {key, processToCheck};
+                    processLog.push_back(A);
+                    printf("\tProcess %d loaded a page with address: %s\n", processToCheck, key.c_str());
+                }
+                else if(isPFrameOk && !isMFrameOk){
+                    //process has room but not main (need to page replace from a process)
+                    printf("\tprocess has room but main does not. pop out optimal element (OPT) and then push new element - page replacement \n");
+                    numReplacements++;
+                    vector<string> throwawayAddrs;
+                    for(int k = i+1; k < i+lookahead;k++){
+                        bool found = false;
+                        for (auto it = processLog.begin(); it != processLog.end(); ++it) {
+                            if (it->addr == addrs.at(k)) {
+                                found = true;
+                            }
+                        }
+                        if(!found){
+                            throwawayAddrs.push_back(addrs.at(k));
+                        }
+                    }
+                    if(throwawayAddrs.size() == 0){
+                        //no optimal choice
+                        processLog.erase(processLog.begin());
+                    }
+                    else{
+                        //use the val in throwawayAddrs
+                        for (auto it = processLog.begin(); it != processLog.end(); ++it) {
+                            if (it->addr == throwawayAddrs.at(0)) {
+                                processLog.erase(it);
+                            }
+                        }
+                    }
+                    struct Action A = {key, processToCheck};
+                    processLog.push_back(A);
+   
+                }
+                else if(!isPFrameOk && isMFrameOk){
+                    //process is full but main has room (need to page replace from this process)
+                    printf("\tprocess is full but main has room (need to find optimal element for this process to pop) - page replacement\n");
+                    numReplacements++;
+
+                    vector<string> throwawayAddrs;
+                    for(int k = i+1; k < i+lookahead;k++){
+                        bool found = false;
+                        for (auto it = processLog.begin(); it != processLog.end(); ++it) {
+                            if (it->addr == addrs.at(k) && it->p == processToCheck) {
+                                found = true;
+                            }
+                        }
+                        if(!found){
+                            throwawayAddrs.push_back(addrs.at(k));
+                        }
+                    }
+                    if(throwawayAddrs.size() == 0){
+                        //no optimal choice
+                        for (auto it = processLog.begin(); it != processLog.end(); ++it) {
+                            if (it->p == processToCheck) {
+                                processLog.erase(it);
+                            }
+                        }
+                    }
+                    else{
+                        //use the val in throwawayAddrs
+                        for (auto it = processLog.begin(); it != processLog.end(); ++it) {
+                            if (it->addr == throwawayAddrs.at(0)) {
+                                processLog.erase(it);
+                            }
+                        }
+                    }
+                    struct Action A = {key, processToCheck};
+                    processLog.push_back(A);
+
+                }
+                else if(!isPFrameOk && !isMFrameOk){
+                    //neither the process frame or the main fram have room (need to page replace from this process)
+                    printf("\tneither the process frame or main have room (need to find optimal element for this process to pop) - page replacement\n");
+                    numReplacements++;
+
+                }
+            }
+            else{
+                printf("addr: %s for process %d already loaded\n", key.c_str(), processToCheck);
+
+                //already have addrs in log dont need to do a page replacement
+            }
+            std::cout << "============================" << endl;
+        }
+    }
+    printf("OPT-%d\nNum Faults: %d\nNum Replacements: %d\n", lookahead, numFaults, numReplacements);
+
+}
+
 void LFU(vector<int>ids, vector<string>addrs, int totalPageFrames, int framesPerProcess, int numProcesses){
     vector<Action> processLog;
     int numFaults = 0;
@@ -563,16 +704,16 @@ int main() {
 
 
     //
-    // printf("\nLIFO RUN STARTING\n");
-    // LIFO(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
-    // printf("\n\n\nMRU RUN STARTING\n");
-    // MRU(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
-    // printf("\n\n\nLRU-1 RUN STARTING\n");
-    // LRU_offset(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses, 1);
-    // printf("\n\n\nLRU-%d RUN STARTING\n",lookaheadWindow);
-    // LRU_offset(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses, lookaheadWindow);
-    // printf("\n\n\nLFU RUN STARTING\n");
-    // LFU(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
+    printf("\nLIFO RUN STARTING\n");
+    LIFO(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
+    printf("\n\n\nMRU RUN STARTING\n");
+    MRU(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
+    printf("\n\n\nLRU-1 RUN STARTING\n");
+    LRU_offset(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses, 1);
+    printf("\n\n\nLRU-%d RUN STARTING\n",lookaheadWindow);
+    LRU_offset(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses, lookaheadWindow);
+    printf("\n\n\nLFU RUN STARTING\n");
+    LFU(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
     printf("\n\n\nOPT-%d RUN STARTING\n", lookaheadWindow);
     OPT(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses, lookaheadWindow);
     
