@@ -15,8 +15,10 @@ struct Action{
     int p;
 };
 
-void LRU_offset(vector<int>ids, vector<string>addrs, int totalPageFrames, int framesPerProcess, int numProcesses, int offset){
+void LFU(vector<int>ids, vector<string>addrs, int totalPageFrames, int framesPerProcess, int numProcesses){
     vector<Action> processLog;
+    int numFaults = 0;
+    int numReplacements = 0;
     
     for(int i = 0; i < addrs.size(); i++){
         
@@ -37,6 +39,145 @@ void LRU_offset(vector<int>ids, vector<string>addrs, int totalPageFrames, int fr
             
             if(!isAddrsLoaded){
                 printf("addr: %s for process %d not loaded - Page Fault\n", key.c_str(), processToCheck);
+                numFaults++;
+                //addrs not in log
+                //need to check if theres room to add it
+                bool isPFrameOk = false;
+                bool isMFrameOk = false;
+
+                
+                int ticker = 0;
+                for (const auto& pair : processLog) {
+                    // printf("pair.addr = %d ::: processToCheck = %d\n", pair.p, processToCheck);
+                    if (pair.p == processToCheck) {
+                        ticker++;
+                    }
+                }
+                // printf("ticker for %d = %d\n", processToCheck, ticker);
+
+                //check if there's room in the process's specific frame max
+                if(ticker < framesPerProcess){ isPFrameOk = true; }
+                //check if theres room at all for another page
+                if(processLog.size() < totalPageFrames){ isMFrameOk = true; }
+
+                // printf("isPFrameOk = %d ::: isMFrameOk = %d\n",  isPFrameOk ? 1:0, isMFrameOk ? 1:0);
+
+                if(isPFrameOk && isMFrameOk){
+                    // both have room
+                    struct Action A = {key, processToCheck};
+                    processLog.push_back(A);
+                    printf("\tProcess %d loaded a page with address: %s\n", processToCheck, key.c_str());
+                }
+                else if(isPFrameOk && !isMFrameOk){
+                    //process has room but not main (need to page replace from a process)
+                    printf("\tprocess has room but main does not. pop out least frequently used element (LFU) and then push new element - page replacement \n");
+                    numReplacements++;
+                    // processLog.pop_back();
+                    // struct Action A = {key, processToCheck};
+                    // processLog.push_back(A);
+                    string currentAddr;
+                    // for every addr used so far, check if it exists in the processLog
+                    for(int k=0; k<=i; k++){
+                        for (const auto& action : processLog) {
+                            if (action.addr == addrs.at(k)) {
+                                currentAddr = addrs.at(k);
+                            }
+                        }
+                    }
+                    for (auto it = processLog.begin(); it != processLog.end(); ++it) {
+                        if (it->addr == currentAddr) {
+                            processLog.erase(it);
+                            break;  // Exit the loop after erasing the first matching element
+                        }
+                    }
+                    struct Action A = {key, processToCheck};
+                    processLog.push_back(A);
+
+                }
+                else if(!isPFrameOk && isMFrameOk){
+                    //process is full but main has room (need to page replace from this process)
+                    printf("\tprocess is full but main has room (need to find least frequently used item from this process) - page replacement\n");
+                    numReplacements++;
+                    string currentAddr;
+                    // for every addr used so far, check if it exists in the processLog
+                    for(int k=0; k<=i; k++){
+                        for (const auto& action : processLog) {
+                            if (action.addr == addrs.at(k) && action.p == processToCheck) {
+                                currentAddr = addrs.at(k);
+                            }
+                        }
+                    }
+                    for (auto it = processLog.begin(); it != processLog.end(); ++it) {
+                        if (it->addr == currentAddr) {
+                            processLog.erase(it);
+                            break;  // Exit the loop after erasing the first matching element
+                        }
+                    }
+                    struct Action A = {key, processToCheck};
+                    processLog.push_back(A);
+                    
+                    
+                }
+                else if(!isPFrameOk && !isMFrameOk){
+                    //neither the process frame or the main fram have room (need to page replace from this process)
+                    printf("\tneither the process frame or main have room (need to find least frequently used item from this process) - page replacement\n");
+                    numReplacements++;
+                    string currentAddr;
+                    // for every addr used so far, check if it exists in the processLog
+                    for(int k=0; k<=i; k++){
+                        for (const auto& action : processLog) {
+                            if (action.addr == addrs.at(k) && action.p == processToCheck) {
+                                currentAddr = addrs.at(k);
+                            }
+                        }
+                    }
+                    for (auto it = processLog.begin(); it != processLog.end(); ++it) {
+                        if (it->addr == currentAddr) {
+                            processLog.erase(it);
+                            break;  // Exit the loop after erasing the first matching element
+                        }
+                    }
+                    struct Action A = {key, processToCheck};
+                    processLog.push_back(A);
+                }
+            }
+            else{
+                printf("addr: %s for process %d already loaded\n", key.c_str(), processToCheck);
+
+                //already have addrs in log dont need to do a page replacement
+            }
+            std::cout << "============================" << endl;
+        }
+    }
+    printf("LFU \nNum Faults: %d\nNum Replacements: %d\n", numFaults, numReplacements);
+
+}
+
+void LRU_offset(vector<int>ids, vector<string>addrs, int totalPageFrames, int framesPerProcess, int numProcesses, int offset){
+    vector<Action> processLog;
+    int numFaults = 0;
+    int numReplacements = 0;
+    
+    for(int i = 0; i < addrs.size(); i++){
+        
+        string key = addrs.at(i);   
+        int processToCheck = ids.at(i);
+        bool isAddrsLoaded = false;
+
+        if(key == "-1"){
+            printf("process %d is done\n============================\n", processToCheck);
+        }
+        else{
+
+            for (const auto& item : processLog) {
+                if(item.addr == key){
+                    isAddrsLoaded = true;
+                }
+            }
+            
+            if(!isAddrsLoaded){
+                printf("addr: %s for process %d not loaded - Page Fault\n", key.c_str(), processToCheck);
+                numFaults++;
                 //addrs not in log
                 //need to check if theres room to add it
                 bool isPFrameOk = false;
@@ -68,6 +209,7 @@ void LRU_offset(vector<int>ids, vector<string>addrs, int totalPageFrames, int fr
                 else if(isPFrameOk && !isMFrameOk){
                     //process has room but not main (need to page replace from a process)
                     printf("\tprocess has room but main does not. pop out least used element (LRU) or least used plus offset (LRUX) and then push new element - page replacement \n");
+                    numReplacements++;
                     if (offset < processLog.size()) {
                     processLog.erase(processLog.begin() + offset);
                     } else {
@@ -79,57 +221,56 @@ void LRU_offset(vector<int>ids, vector<string>addrs, int totalPageFrames, int fr
                 else if(!isPFrameOk && isMFrameOk){
                     //process is full but main has room (need to page replace from this process)
                     printf("\tprocess is full but main has room (need to find least recently used item from this process) - page replacement\n");
+                    numReplacements++;
 
                     int foundCount = 0;
-                    for (auto it = processLog.begin(); it != processLog.end(); ++it) {
-                        if (it->addr == key) {
-                            foundCount++;
-                            if (foundCount == offset) {
-                                // Found the nth instance, delete it and break the loop
+                    auto it = processLog.begin();
+
+                    while (it != processLog.end()) {
+                        if (it->p == processToCheck) {
+                            if (offset == 1 || foundCount == offset - 1) {
                                 processLog.erase(it);
-                                break;
+                                break; // Exit the loop after erasing
+                            } else {
+                                ++foundCount;
                             }
+                        } else {
+                            ++it;
                         }
                     }
-                    struct Action A = {key, processToCheck};
-                    processLog.push_back(A);
-                    
-                    
                 }
                 else if(!isPFrameOk && !isMFrameOk){
                     //neither the process frame or the main fram have room (need to page replace from this process)
                     printf("\tneither the process frame or main have room (need to find least recently added item from this process) - page replacement\n");
+                    numReplacements++;
+
                     int foundCount = 0;
-                    for (auto it = processLog.begin(); it != processLog.end(); ++it) {
-                        if (it->addr == key) {
-                            foundCount++;
-                            if (foundCount == offset) {
-                                // Found the nth instance, delete it and break the loop
+                    auto it = processLog.begin();
+
+                    while (it != processLog.end()) {
+                        if (it->p == processToCheck) {
+                            if (offset == 1 || foundCount == offset - 1) {
                                 processLog.erase(it);
-                                break;
+                                break; // Exit the loop after erasing
+                            } else {
+                                ++foundCount;
                             }
+                        } else {
+                            ++it;
                         }
                     }
-                    struct Action A = {key, processToCheck};
-                    processLog.push_back(A);
+
                 }
             }
             else{
                 printf("addr: %s for process %d already loaded\n", key.c_str(), processToCheck);
-                for (auto it = processLog.rbegin(); it != processLog.rend(); ++it) {
-                    if (it->addr == key) {
-                        // Move the found element to the end of the vector
-                        processLog.emplace_back(std::move(*it));
-                        processLog.erase(std::next(it.base())); // Erase the original element
-                        break; // Stop iterating after the first match is found
-                    }
-                }
 
                 //already have addrs in log dont need to do a page replacement
             }
             std::cout << "============================" << endl;
         }
     }
+    printf("LRU-%d\nNum Faults: %d\nNum Replacements: %d\n", offset, numFaults, numReplacements);
 
 }
 
@@ -396,25 +537,25 @@ int main() {
         processIds.push_back(tempId);
         processSizes.push_back(tempSize);
     }
-    std::cout << "collected processes" << endl;
+    // std::cout << "collected processes" << endl;
 
-    std::cout << "ids: " << endl;
-    for(int i= 0; i<processIds.size(); i++){
-        std::cout << processIds.at(i) << endl;
-    }
-    std::cout << "sizes: "<< endl;
-    for(int i= 0; i<processSizes.size(); i++){
-        std::cout << processSizes.at(i) << endl;
-    }
+    // std::cout << "ids: " << endl;
+    // for(int i= 0; i<processIds.size(); i++){
+    //     std::cout << processIds.at(i) << endl;
+    // }
+    // std::cout << "sizes: "<< endl;
+    // for(int i= 0; i<processSizes.size(); i++){
+    //     std::cout << processSizes.at(i) << endl;
+    // }
 
     //grab queue of requests
     string eachAddr;
     int eachId;
-    printf("Queue of process requests: \n");
+    // printf("Queue of process requests: \n");
     while(infile >> eachId >> eachAddr){
         processIdQueue.push_back(eachId);
         processAddrQueue.push_back(eachAddr);
-        printf("Id: %d, Addr: %s\n", eachId, eachAddr.c_str());
+        // printf("Id: %d, Addr: %s\n", eachId, eachAddr.c_str());
     }
 
     // Close the file
@@ -422,14 +563,18 @@ int main() {
 
 
     //
-    printf("LIFO RUN STARTING\n");
-    LIFO(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
-    printf("\n\n\nMRU RUN STARTING\n");
-    MRU(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
-    printf("\n\n\nLRU-0 RUN STARTING\n");
-    // LRU_offset(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses, 0);
+    // printf("\nLIFO RUN STARTING\n");
+    // LIFO(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
+    // printf("\n\n\nMRU RUN STARTING\n");
+    // MRU(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
+    // printf("\n\n\nLRU-1 RUN STARTING\n");
+    // LRU_offset(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses, 1);
     // printf("\n\n\nLRU-%d RUN STARTING\n",lookaheadWindow);
     // LRU_offset(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses, lookaheadWindow);
+    // printf("\n\n\nLFU RUN STARTING\n");
+    // LFU(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses);
+    printf("\n\n\nOPT-%d RUN STARTING\n", lookaheadWindow);
+    OPT(processIdQueue, processAddrQueue, totalPageFrames, framesPerProcess, numProcesses, lookaheadWindow);
     
     
 
